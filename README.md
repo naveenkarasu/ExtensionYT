@@ -31,6 +31,9 @@ Downloading content from YouTube may violate YouTube's Terms of Service and copy
 - 📊 Real-time download progress via WebSocket
 - 🎨 Automatic metadata extraction and embedding
 - 🔄 API versioning support
+- ❌ Cancel downloads in progress (deletes all associated files)
+- 🧹 Automatic cleanup of temporary files (deletes files older than 10 minutes)
+- 🎯 Smart playlist detection (automatically detects playlists from URLs)
 
 ## Prerequisites
 
@@ -224,6 +227,7 @@ Both endpoints support playlist URLs. When a playlist is detected:
 - A `sessionId` is returned
 - Downloads are processed sequentially
 - Progress updates are sent via WebSocket
+- **Smart Detection**: URLs with `list` parameter automatically download the entire playlist (even if `v` parameter is also present)
 
 **Response (Playlist):**
 
@@ -234,6 +238,8 @@ Both endpoints support playlist URLs. When a playlist is detected:
   "message": "Batch download started. Connect to ws://localhost:4000/ws?sessionId=unique_session_id for progress updates"
 }
 ```
+
+**Note:** Playlist downloads currently support audio format only. Video playlist downloads are coming soon.
 
 #### WebSocket Progress Updates
 
@@ -256,14 +262,84 @@ Connect to `ws://localhost:4000/ws?sessionId=YOUR_SESSION_ID` to receive real-ti
 - `start`: Download started for a video
 - `progress`: Download progress update
 - `success`: Video downloaded successfully
-- `error`: Download failed
+- `error`: Download failed or cancelled
 - `complete`: All videos in playlist downloaded
+
+#### Cancel Download
+
+**POST** `/api/v1/cancel`
+
+Cancel an active download session. This will:
+
+- Stop all active downloads
+- Kill all running processes
+- Delete all downloaded files for that session
+
+**Request Body:**
+
+```json
+{
+  "sessionId": "unique_session_id"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Download cancelled",
+  "sessionId": "unique_session_id"
+}
+```
+
+**Note:** You can also send a cancel message via WebSocket: `{"type": "cancel"}`
 
 ### Health Check
 
 **GET** `/health`
 
 Returns server status.
+
+**Response:**
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-01-02T19:27:46.192Z",
+  "server": "running"
+}
+```
+
+#### Get Playlist Details
+
+**GET** `/api/v1/playlist?url=PLAYLIST_URL`
+
+**POST** `/api/v1/playlist`
+
+List all videos in a YouTube playlist with metadata (title, duration, thumbnail, etc.).
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "playlistUrl": "https://www.youtube.com/playlist?list=...",
+  "totalSongs": 17,
+  "totalDuration": "1:23:45",
+  "estimatedSize": "245.67 MB",
+  "songs": [
+    {
+      "index": 1,
+      "id": "VIDEO_ID",
+      "title": "Video Title",
+      "duration": "4:38",
+      "thumbnail": "https://...",
+      "uploader": "Channel Name"
+    }
+  ]
+}
+```
 
 ## Usage Examples
 
@@ -289,6 +365,28 @@ curl -X POST http://localhost:4000/api/v1/download \
 curl -X POST http://localhost:4000/api/v1/download \
   -H "Content-Type: application/json" \
   -d "{\"url\": \"https://www.youtube.com/playlist?list=PLAYLIST_ID\", \"format\": \"audio\", \"quality\": \"192\"}"
+```
+
+**Note:** You can also use a video URL with `list` parameter - it will download the entire playlist:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/download \
+  -H "Content-Type: application/json" \
+  -d "{\"url\": \"https://www.youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID\", \"format\": \"audio\", \"quality\": \"192\"}"
+```
+
+### Cancel Download (cURL)
+
+```bash
+curl -X POST http://localhost:4000/api/v1/cancel \
+  -H "Content-Type: application/json" \
+  -d "{\"sessionId\": \"your_session_id\"}"
+```
+
+### Get Playlist Details (cURL)
+
+```bash
+curl "http://localhost:4000/api/v1/playlist?url=https://www.youtube.com/playlist?list=PLAYLIST_ID"
 ```
 
 ### Using PowerShell
@@ -321,6 +419,33 @@ ExtensionYT/
 └── package.json           # Extension package.json
 ```
 
+## Key Features Explained
+
+### Automatic File Cleanup
+
+The server automatically deletes downloaded files after 10 minutes to prevent disk space issues. This ensures:
+
+- Files are temporarily stored for serving to Chrome
+- After Chrome downloads the file, the server copy is cleaned up
+- No manual cleanup required
+
+### Cancel Download Feature
+
+When you cancel a download:
+
+- All active download processes are immediately stopped
+- All files downloaded in that session are deleted (including in-progress files)
+- WebSocket connection is closed
+- Session data is cleaned up
+
+### Smart Playlist Detection
+
+The server intelligently detects playlists:
+
+- URLs with `list` parameter → Always downloads entire playlist
+- URLs without `list` parameter → Downloads single video
+- Works even when both `v` and `list` parameters are present
+
 ## Troubleshooting
 
 ### Server won't start
@@ -345,6 +470,18 @@ ExtensionYT/
 - Ensure you've built the extension: `npm run build`
 - Load the `dist` folder, not the `src` folder
 - Check Chrome's extension error page for details
+
+### Cancel not working
+
+- Ensure the `sessionId` is correct
+- Check server logs for cancellation messages
+- Verify WebSocket connection is active (for playlist downloads)
+
+### Files not being cleaned up
+
+- Files are automatically deleted after 10 minutes
+- Cancelled downloads delete files immediately
+- Check server logs for cleanup messages
 
 ## Environment Variables
 

@@ -26,6 +26,68 @@ interface VideoMetadata {
   playlist_title?: string;
 }
 
+// Playlist video interface
+interface PlaylistVideo {
+  id: string;
+  title: string;
+  url: string;
+  duration?: number;
+  thumbnail?: string;
+  uploader?: string;
+  channel?: string;
+}
+
+// Formatted playlist video interface
+interface FormattedPlaylistVideo {
+  index: number;
+  id: string;
+  title: string;
+  url: string;
+  duration?: string; // Formatted as "MM:SS" or "HH:MM:SS"
+  durationSeconds?: number;
+  thumbnail?: string;
+  uploader?: string;
+  channel?: string;
+}
+
+// Helper function to format duration (seconds) to readable format
+function formatDuration(seconds?: number): string {
+  if (!seconds || seconds <= 0) return 'Unknown';
+  
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  } else {
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  }
+}
+
+// Helper function to format file size
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+// Estimate total size based on duration and average bitrates
+function estimateTotalSize(totalDurationSeconds: number, format: 'audio' | 'video' = 'audio'): number {
+  // Average bitrates (conservative estimates)
+  const audioBitrateKbps = 192; // kbps for MP3
+  const videoBitrateMbps = 5; // Mbps for MP4 (video + audio combined)
+  
+  if (format === 'audio') {
+    // Size in bytes = (bitrate in kbps * duration in seconds * 1000) / 8
+    return (audioBitrateKbps * totalDurationSeconds * 1000) / 8;
+  } else {
+    // Size in bytes = (bitrate in Mbps * duration in seconds * 1000000) / 8
+    return (videoBitrateMbps * totalDurationSeconds * 1000000) / 8;
+  }
+}
+
 // WebSocket progress message interface
 interface ProgressMessage {
   type: 'start' | 'progress' | 'success' | 'error' | 'complete';
@@ -33,15 +95,150 @@ interface ProgressMessage {
   current?: number;
   total?: number;
   videoUrl?: string;
+  videoTitle?: string;
+  videoDuration?: string;
   fileName?: string;
   downloadUrl?: string;
   error?: string;
+  playlistInfo?: {
+    totalSongs: number;
+    totalDuration: string;
+  };
   successful?: number;
   failed?: number;
 }
 
 // Store WebSocket connections by session ID
 const wsConnections = new Map<string, WebSocket>();
+
+// Session tracking for cancellation
+interface SessionData {
+  cancelled: boolean;
+  processes: Set<any>; // Child processes (yt-dlp spawns)
+  files: Set<string>; // Downloaded file names
+  startTime: number; // Session start timestamp
+  expectedFilePatterns: Set<string>; // Expected filename patterns for in-progress downloads
+}
+
+const sessionData = new Map<string, SessionData>();
+
+// Initialize or get session data
+function getSessionData(sessionId: string): SessionData {
+  if (!sessionData.has(sessionId)) {
+    sessionData.set(sessionId, {
+      cancelled: false,
+      processes: new Set(),
+      files: new Set(),
+      startTime: Date.now(),
+      expectedFilePatterns: new Set()
+    });
+  }
+  return sessionData.get(sessionId)!;
+}
+
+// Cancel a download session
+function cancelSession(sessionId: string): void {
+  const data = getSessionData(sessionId);
+  data.cancelled = true;
+  
+  console.log(`[CANCEL] Cancelling session ${sessionId}`);
+  console.log(`[CANCEL] Killing ${data.processes.size} active process(es)`);
+  console.log(`[CANCEL] Deleting ${data.files.size} file(s)`);
+  
+  // Kill all active processes
+  data.processes.forEach((process) => {
+    try {
+      if (process && !process.killed) {
+        process.kill('SIGTERM');
+        console.log(`[CANCEL] Killed process ${process.pid}`);
+      }
+    } catch (error) {
+      console.error(`[CANCEL] Error killing process: ${error}`);
+    }
+  });
+  
+  // Delete all downloaded files (registered files)
+  let deletedCount = 0;
+  data.files.forEach((fileName) => {
+    try {
+      const filePath = path.join(DOWNLOAD_ROOT, fileName);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        deletedCount++;
+        console.log(`[CANCEL] Deleted file: ${fileName}`);
+      }
+    } catch (error) {
+      console.error(`[CANCEL] Error deleting file ${fileName}: ${error}`);
+    }
+  });
+  
+  // Also find and delete any in-progress files that match expected patterns
+  // This handles files that were created but not yet registered
+  try {
+    const allFiles = fs.readdirSync(DOWNLOAD_ROOT);
+    const sessionStartTime = data.startTime;
+    const now = Date.now();
+    const maxFileAge = 5 * 60 * 1000; // 5 minutes - files created during this session
+    
+    allFiles.forEach((fileName) => {
+      // Skip if already deleted
+      if (data.files.has(fileName)) {
+        return;
+      }
+      
+      // Check if file matches any expected pattern
+      let matchesPattern = false;
+      const fileNameWithoutExt = fileName.replace(/\.[^.]+$/, ''); // Remove extension
+      data.expectedFilePatterns.forEach((pattern) => {
+        // Check if filename starts with pattern or pattern is contained in filename
+        if (fileNameWithoutExt.startsWith(pattern) || 
+            fileNameWithoutExt.includes(pattern) || 
+            pattern.includes(fileNameWithoutExt.substring(0, Math.min(30, fileNameWithoutExt.length)))) {
+          matchesPattern = true;
+        }
+      });
+      
+      // Also check files created/modified during the session timeframe
+      try {
+        const filePath = path.join(DOWNLOAD_ROOT, fileName);
+        const stats = fs.statSync(filePath);
+        const fileAge = now - stats.mtime.getTime();
+        const wasCreatedDuringSession = fileAge < maxFileAge && stats.mtime.getTime() >= sessionStartTime;
+        
+        // Delete if it matches pattern OR was created during session
+        if (matchesPattern || wasCreatedDuringSession) {
+          // Only delete media files (not system files)
+          const mediaExtensions = ['.mp3', '.mp4', '.webm', '.m4a', '.opus', '.mkv', '.avi', '.mov'];
+          const isMediaFile = mediaExtensions.some(ext => fileName.toLowerCase().endsWith(ext));
+          
+          if (isMediaFile) {
+            fs.unlinkSync(filePath);
+            deletedCount++;
+            console.log(`[CANCEL] Deleted in-progress file: ${fileName}`);
+          }
+        }
+      } catch (error) {
+        // Ignore errors for individual files
+      }
+    });
+  } catch (error) {
+    console.error(`[CANCEL] Error scanning for in-progress files: ${error}`);
+  }
+  
+  // Send cancellation message via WebSocket
+  sendWebSocketMessage(sessionId, {
+    type: 'error',
+    sessionId,
+    error: 'Download cancelled by user'
+  });
+  
+  // Clean up session data after a delay
+  setTimeout(() => {
+    sessionData.delete(sessionId);
+  }, 5000);
+  
+  console.log(`[CANCEL] Session ${sessionId} cancelled. Deleted ${deletedCount} file(s)`);
+}
 
 // Check if FFmpeg is available in PATH at startup
 function checkFFmpegAvailability(): boolean {
@@ -55,8 +252,18 @@ function checkFFmpegAvailability(): boolean {
 }
 
 // Extract metadata from YouTube video using yt-dlp
-async function extractMetadata(url: string): Promise<VideoMetadata | null> {
+async function extractMetadata(url: string, sessionId?: string): Promise<VideoMetadata | null> {
   return new Promise((resolve) => {
+    // Check if cancelled before starting metadata extraction
+    if (sessionId) {
+      const data = getSessionData(sessionId);
+      if (data.cancelled) {
+        console.log(`[METADATA] Metadata extraction cancelled for: ${url}`);
+        resolve(null);
+        return;
+      }
+    }
+    
     console.log(`[METADATA] Extracting metadata for: ${url}`);
     
     const metadataArgs = [
@@ -78,6 +285,19 @@ async function extractMetadata(url: string): Promise<VideoMetadata | null> {
         PATH: updatedPath
       }
     });
+    
+    // Register metadata process with session if sessionId provided
+    if (sessionId) {
+      const data = getSessionData(sessionId);
+      data.processes.add(metadataProcess);
+      
+      // Check again if cancelled after registering
+      if (data.cancelled) {
+        metadataProcess.kill('SIGTERM');
+        resolve(null);
+        return;
+      }
+    }
 
     let stdoutData = '';
     let stderrData = '';
@@ -96,6 +316,19 @@ async function extractMetadata(url: string): Promise<VideoMetadata | null> {
     });
 
     metadataProcess.on('close', (code) => {
+      // Unregister process from session
+      if (sessionId) {
+        const data = getSessionData(sessionId);
+        data.processes.delete(metadataProcess);
+        
+        // Check if cancelled during metadata extraction
+        if (data.cancelled) {
+          console.log(`[METADATA] Metadata extraction cancelled for: ${url}`);
+          resolve(null);
+          return;
+        }
+      }
+      
       if (code !== 0) {
         console.log(`[METADATA] Metadata extraction failed with code ${code}`);
         console.log(`[METADATA] stderr: ${stderrData.slice(-500)}`);
@@ -125,14 +358,36 @@ async function extractMetadata(url: string): Promise<VideoMetadata | null> {
       }
     });
 
-    // Set timeout for metadata extraction (30 seconds)
-    setTimeout(() => {
+    // Set timeout for metadata extraction (45 seconds - increased for slower connections)
+    // Note: This timeout is non-critical - download will proceed even if metadata extraction fails
+    const metadataTimeout = setTimeout(() => {
       if (metadataProcess.killed === false) {
         metadataProcess.kill('SIGTERM');
-        console.log(`[METADATA] Metadata extraction timeout`);
+        console.log(`[METADATA] Metadata extraction timeout (non-critical - download will continue)`);
         resolve(null);
       }
-    }, 30000);
+    }, 45000);
+    
+    // Check for cancellation periodically during metadata extraction
+    const cancellationCheck = setInterval(() => {
+      if (sessionId) {
+        const data = getSessionData(sessionId);
+        if (data.cancelled) {
+          clearInterval(cancellationCheck);
+          clearTimeout(metadataTimeout);
+          if (metadataProcess.killed === false) {
+            metadataProcess.kill('SIGTERM');
+          }
+          resolve(null);
+        }
+      }
+    }, 1000); // Check every second
+    
+    // Clean up interval when process closes
+    metadataProcess.on('close', () => {
+      clearInterval(cancellationCheck);
+      clearTimeout(metadataTimeout);
+    });
   });
 }
 
@@ -205,6 +460,52 @@ if (!fs.existsSync(DOWNLOAD_ROOT)) {
   fs.mkdirSync(DOWNLOAD_ROOT, { recursive: true });
 }
 
+// Cleanup function to delete old files from downloads folder
+// This prevents the server from storing duplicate copies indefinitely
+function cleanupOldFiles(maxAgeMinutes: number = 60): void {
+  try {
+    const files = fs.readdirSync(DOWNLOAD_ROOT);
+    const now = Date.now();
+    let deletedCount = 0;
+    let totalFreed = 0;
+
+    files.forEach((file) => {
+      const filePath = path.join(DOWNLOAD_ROOT, file);
+      try {
+        const stats = fs.statSync(filePath);
+        const ageMinutes = (now - stats.mtime.getTime()) / (1000 * 60);
+        
+        if (ageMinutes > maxAgeMinutes) {
+          const fileSize = stats.size;
+          fs.unlinkSync(filePath);
+          deletedCount++;
+          totalFreed += fileSize;
+          console.log(`[CLEANUP] Deleted old file: ${file} (${formatFileSize(fileSize)}, ${Math.round(ageMinutes)} minutes old)`);
+        }
+      } catch (err) {
+        // Ignore errors for individual files (might be deleted by another process)
+        console.log(`[CLEANUP] Could not process file ${file}: ${err}`);
+      }
+    });
+
+    if (deletedCount > 0) {
+      console.log(`[CLEANUP] Cleaned up ${deletedCount} file(s), freed ${formatFileSize(totalFreed)}`);
+    }
+  } catch (error) {
+    console.error(`[CLEANUP] Error during cleanup: ${error}`);
+  }
+}
+
+// Run cleanup every 5 minutes to remove files older than 10 minutes
+// This gives Chrome plenty of time to download but prevents indefinite storage
+// Files are deleted based on their modification time (when they were created/downloaded)
+setInterval(() => {
+  cleanupOldFiles(10); // Delete files older than 10 minutes
+}, 5 * 60 * 1000); // Run every 5 minutes
+
+// Run initial cleanup on server start
+cleanupOldFiles(10);
+
 // Simple request logging middleware
 app.use((req, res, next) => {
   console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.path}`);
@@ -223,8 +524,103 @@ app.use(
   })
 );
 
-// Serve downloaded files statically
-app.use('/downloads', express.static(DOWNLOAD_ROOT));
+// Industry-standard download endpoint using query parameter
+// This approach is used by AWS S3, Google Cloud Storage, and most file hosting services
+// Format: /download?file=encoded_filename
+app.get('/download', (req, res) => {
+  try {
+    const filename = req.query.file as string;
+    
+    if (!filename) {
+      return res.status(400).json({ error: 'Missing file parameter' });
+    }
+    
+    // Decode the filename
+    const decodedFilename = decodeURIComponent(filename);
+    const filePath = path.join(DOWNLOAD_ROOT, decodedFilename);
+    
+    // Security check: prevent directory traversal attacks
+    const resolvedPath = path.resolve(filePath);
+    const resolvedRoot = path.resolve(DOWNLOAD_ROOT);
+    
+    if (!resolvedPath.startsWith(resolvedRoot)) {
+      console.error(`[DOWNLOAD] Security violation: ${resolvedPath} is outside ${resolvedRoot}`);
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.log(`[DOWNLOAD] File not found: ${filePath}`);
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    // Get file stats
+    const stats = fs.statSync(filePath);
+    const fileExtension = path.extname(decodedFilename).toLowerCase();
+    
+    // Set appropriate Content-Type
+    const contentTypeMap: { [key: string]: string } = {
+      '.mp3': 'audio/mpeg',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.m4a': 'audio/mp4',
+      '.opus': 'audio/opus'
+    };
+    
+    const contentType = contentTypeMap[fileExtension] || 'application/octet-stream';
+    
+    // Set proper headers for download
+    // Use RFC 5987 format for filename with special characters
+    const basename = path.basename(decodedFilename);
+    // For Content-Disposition, use both simple and extended format for maximum compatibility
+    // Simple format for basic filenames, extended format (RFC 5987) for special characters
+    const simpleFilename = basename.replace(/[^\x20-\x7E]/g, '_'); // ASCII only for simple format
+    const extendedFilename = encodeURIComponent(basename);
+    
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Length', stats.size);
+    res.setHeader('Content-Disposition', `attachment; filename="${simpleFilename}"; filename*=UTF-8''${extendedFilename}`);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Type, Content-Length, Content-Range, Accept-Ranges');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Accept-Ranges', 'bytes');
+    
+    // Support HTTP range requests for resumable downloads (Chrome uses this)
+    const range = req.headers.range;
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : stats.size - 1;
+      const chunkSize = (end - start) + 1;
+      
+      res.status(206); // Partial Content
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${stats.size}`);
+      res.setHeader('Content-Length', chunkSize);
+      
+      const fileStream = fs.createReadStream(filePath, { start, end });
+      fileStream.pipe(res);
+    } else {
+      // Send the entire file
+      res.sendFile(filePath);
+    }
+  } catch (error) {
+    console.error(`[DOWNLOAD] Error serving file: ${error}`);
+    res.status(500).json({ error: 'Failed to serve file' });
+  }
+});
+
+// Serve files statically as fallback (for direct access via /downloads/filename)
+app.use('/downloads', express.static(DOWNLOAD_ROOT, {
+  setHeaders: (res, filePath) => {
+    const basename = path.basename(filePath);
+    const simpleFilename = basename.replace(/[^\x20-\x7E]/g, '_');
+    const extendedFilename = encodeURIComponent(basename);
+    
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Disposition', `attachment; filename="${simpleFilename}"; filename*=UTF-8''${extendedFilename}`);
+    res.setHeader('Accept-Ranges', 'bytes');
+  }
+}));
 
 // Download single video - reusable function for both single and batch downloads
 // Download single video - audio only (legacy function, kept for backward compatibility)
@@ -248,10 +644,29 @@ async function downloadVideoOrAudio(
     const id = Date.now().toString() + Math.random().toString(36).substring(2, 9);
     const safeId = id.replace(/[^a-zA-Z0-9-_]/g, '');
 
+    // Check if cancelled before metadata extraction
+    if (sessionId) {
+      const data = getSessionData(sessionId);
+      if (data.cancelled) {
+        resolve({ success: false, error: 'Download cancelled' });
+        return;
+      }
+    }
+    
     // Extract metadata before starting download
     let metadata: VideoMetadata | null = null;
     try {
-      metadata = await extractMetadata(videoUrl);
+      metadata = await extractMetadata(videoUrl, sessionId);
+      
+      // Check again if cancelled after metadata extraction
+      if (sessionId) {
+        const data = getSessionData(sessionId);
+        if (data.cancelled) {
+          resolve({ success: false, error: 'Download cancelled' });
+          return;
+        }
+      }
+      
       if (metadata && sessionId) {
         logMetadata(metadata);
       }
@@ -266,6 +681,15 @@ async function downloadVideoOrAudio(
       fileName = sanitizedTitle;
     } else {
       fileName = safeId;
+    }
+    
+    // Register expected filename pattern with session for cleanup
+    if (sessionId) {
+      const data = getSessionData(sessionId);
+      // Store a pattern that can match the file (first 30 chars of filename)
+      // This helps find in-progress files even if they're not fully registered
+      const pattern = fileName.substring(0, Math.min(30, fileName.length));
+      data.expectedFilePatterns.add(pattern);
     }
 
     // Create output template
@@ -319,6 +743,19 @@ async function downloadVideoOrAudio(
       }
     });
     
+    // Register process with session if sessionId provided
+    if (sessionId) {
+      const data = getSessionData(sessionId);
+      data.processes.add(yt);
+      
+      // Check if session is already cancelled
+      if (data.cancelled) {
+        yt.kill('SIGTERM');
+        resolve({ success: false, error: 'Download cancelled' });
+        return;
+      }
+    }
+    
     let stdoutData = '';
     let stderrData = '';
     let downloadComplete = false;
@@ -350,6 +787,18 @@ async function downloadVideoOrAudio(
       if (downloadComplete) return;
       downloadComplete = true;
       clearTimeout(timeout);
+      
+      // Unregister process from session
+      if (sessionId) {
+        const data = getSessionData(sessionId);
+        data.processes.delete(yt);
+        
+        // Check if cancelled during download
+        if (data.cancelled) {
+          resolve({ success: false, error: 'Download cancelled' });
+          return;
+        }
+      }
 
       if (code !== 0) {
         // Check for FFmpeg error
@@ -358,7 +807,8 @@ async function downloadVideoOrAudio(
             const webmFile = `${fileName}.webm`;
             const webmPath = path.join(DOWNLOAD_ROOT, webmFile);
             if (fs.existsSync(webmPath)) {
-              resolve({ success: true, fileName: webmFile, downloadUrl: `/downloads/${webmFile}` });
+              const encodedWebmFile = encodeURIComponent(webmFile);
+              resolve({ success: true, fileName: webmFile, downloadUrl: `/download?file=${encodedWebmFile}` });
               return;
             }
           }
@@ -374,7 +824,21 @@ async function downloadVideoOrAudio(
         const filePath = path.join(DOWNLOAD_ROOT, expectedFileName);
 
         if (fs.existsSync(filePath)) {
-          resolve({ success: true, fileName: expectedFileName, downloadUrl: `/downloads/${expectedFileName}` });
+          // Register file with session
+          if (sessionId) {
+            const data = getSessionData(sessionId);
+            // Check if cancelled before registering file
+            if (data.cancelled) {
+              fs.unlinkSync(filePath);
+              resolve({ success: false, error: 'Download cancelled' });
+              return;
+            }
+            data.files.add(expectedFileName);
+          }
+          
+          // Use query parameter approach (industry standard)
+          const encodedFileName = encodeURIComponent(expectedFileName);
+          resolve({ success: true, fileName: expectedFileName, downloadUrl: `/download?file=${encodedFileName}` });
           return;
         }
 
@@ -390,7 +854,26 @@ async function downloadVideoOrAudio(
         });
         
         if (files.length > 0) {
-          resolve({ success: true, fileName: files[0], downloadUrl: `/downloads/${files[0]}` });
+          const foundFile = files[0];
+          
+          // Register file with session
+          if (sessionId) {
+            const data = getSessionData(sessionId);
+            // Check if cancelled before registering file
+            if (data.cancelled) {
+              const filePath = path.join(DOWNLOAD_ROOT, foundFile);
+              if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+              }
+              resolve({ success: false, error: 'Download cancelled' });
+              return;
+            }
+            data.files.add(foundFile);
+          }
+          
+          // Use query parameter approach (industry standard)
+          const encodedFileName = encodeURIComponent(foundFile);
+          resolve({ success: true, fileName: foundFile, downloadUrl: `/download?file=${encodedFileName}` });
         } else {
           resolve({ success: false, error: 'Output file not found after download' });
         }
@@ -402,9 +885,12 @@ async function downloadVideoOrAudio(
 // Process batch download for playlist
 async function processBatchDownload(playlistUrl: string, sessionId: string, quality: string = '192'): Promise<void> {
   try {
-    // Extract all video URLs from playlist
-    const videoUrls = await extractPlaylistVideos(playlistUrl);
-    const total = videoUrls.length;
+    // Initialize session data
+    getSessionData(sessionId);
+    
+    // Extract all videos with metadata from playlist
+    const videos = await extractPlaylistDetails(playlistUrl);
+    const total = videos.length;
 
     if (total === 0) {
       sendWebSocketMessage(sessionId, {
@@ -414,35 +900,73 @@ async function processBatchDownload(playlistUrl: string, sessionId: string, qual
       });
       return;
     }
+    
+    // Check if cancelled before starting
+    const data = getSessionData(sessionId);
+    if (data.cancelled) {
+      sendWebSocketMessage(sessionId, {
+        type: 'error',
+        sessionId,
+        error: 'Download cancelled'
+      });
+      return;
+    }
 
-    // Send start message
+    // Calculate total duration for playlist info
+    const totalDuration = videos.reduce((sum, video) => sum + (video.duration || 0), 0);
+
+    // Send start message with playlist info
     sendWebSocketMessage(sessionId, {
       type: 'start',
       sessionId,
-      total
+      total,
+      playlistInfo: {
+        totalSongs: total,
+        totalDuration: formatDuration(totalDuration)
+      }
     });
 
     let successful = 0;
     let failed = 0;
 
     // Process each video sequentially
-    for (let i = 0; i < videoUrls.length; i++) {
-      const videoUrl = videoUrls[i];
+    for (let i = 0; i < videos.length; i++) {
+      // Check if cancelled before each download
+      const data = getSessionData(sessionId);
+      if (data.cancelled) {
+        console.log(`[BATCH] Download cancelled at video ${i + 1}/${total}`);
+        sendWebSocketMessage(sessionId, {
+          type: 'error',
+          sessionId,
+          error: 'Download cancelled by user'
+        });
+        return;
+      }
+      
+      const video = videos[i];
       const current = i + 1;
 
-      // Send progress message
+      // Send progress message with song title and duration
       sendWebSocketMessage(sessionId, {
         type: 'progress',
         sessionId,
         current,
         total,
-        videoUrl,
+        videoUrl: video.url,
+        videoTitle: video.title,
+        videoDuration: formatDuration(video.duration),
         fileName: undefined,
         downloadUrl: undefined
       });
 
       // Download the video
-      const result = await downloadSingleVideo(videoUrl, quality, sessionId);
+      const result = await downloadSingleVideo(video.url, quality, sessionId);
+      
+      // Check if cancelled after download
+      if (data.cancelled) {
+        console.log(`[BATCH] Download cancelled after video ${current}/${total}`);
+        return;
+      }
 
       if (result.success) {
         successful++;
@@ -451,7 +975,8 @@ async function processBatchDownload(playlistUrl: string, sessionId: string, qual
           sessionId,
           current,
           total,
-          videoUrl,
+          videoUrl: video.url,
+          videoTitle: video.title,
           fileName: result.fileName,
           downloadUrl: result.downloadUrl
         });
@@ -462,7 +987,8 @@ async function processBatchDownload(playlistUrl: string, sessionId: string, qual
           sessionId,
           current,
           total,
-          videoUrl,
+          videoUrl: video.url,
+          videoTitle: video.title,
           error: result.error || 'Download failed'
         });
       }
@@ -602,8 +1128,14 @@ app.post('/api/v1/download', async (req, res) => {
   console.log(`[INFO] Valid v1 request received for URL: ${url}, Format: ${format}, Quality: ${quality || 'default'}`);
 
   // Check if URL is a playlist
+  // Treat as playlist if URL explicitly contains '/playlist' OR has 'list' parameter
+  // If 'list' parameter exists, always download the entire playlist (even if 'v' parameter is also present)
   const urlObj = new URL(url);
   const playlistId = urlObj.searchParams.get('list');
+  
+  // Treat as playlist if:
+  // 1. URL contains '/playlist' explicitly, OR
+  // 2. URL has 'list' parameter (regardless of whether 'v' parameter exists)
   const isPlaylistUrl = url.includes('/playlist') || (playlistId !== null && playlistId !== '');
   
   // If it's a playlist, start batch download (currently only supports audio)
@@ -642,17 +1174,8 @@ app.post('/api/v1/download', async (req, res) => {
 
   const audioQuality = quality === '320' || quality === '192' || quality === '128' ? quality : '192';
 
-  // Check if URL has list parameter but we want single video
-  const videoId = urlObj.searchParams.get('v');
-  const hasListParam = urlObj.searchParams.has('list');
-  
-  const downloadUrl = videoId && hasListParam 
-    ? `https://www.youtube.com/watch?v=${videoId}`
-    : url;
-
-  if (hasListParam && videoId) {
-    console.log(`[INFO] Playlist URL with video ID detected, extracting single ${format}: ${videoId}`);
-  }
+  // For single video downloads, use the original URL
+  const downloadUrl = url;
 
   console.log(`[${new Date().toISOString()}] Starting ${format} download: ${downloadUrl}`);
   const result = await downloadVideoOrAudio(downloadUrl, audioQuality, format);
@@ -668,6 +1191,222 @@ app.post('/api/v1/download', async (req, res) => {
     return res.status(500).json({
       error: result.error || 'Download failed',
       details: { url: downloadUrl, format }
+    });
+  }
+});
+
+// Cancel download endpoint
+app.post('/api/v1/cancel', (req, res) => {
+  const { sessionId } = req.body as { sessionId?: string };
+  
+  if (!sessionId || typeof sessionId !== 'string') {
+    return res.status(400).json({ error: 'Missing or invalid sessionId' });
+  }
+  
+  console.log(`[CANCEL] Cancel request received for session: ${sessionId}`);
+  cancelSession(sessionId);
+  
+  return res.json({
+    success: true,
+    message: 'Download cancelled',
+    sessionId
+  });
+});
+
+// API v1 - Get playlist details (list all videos in playlist)
+app.get('/api/v1/playlist', async (req, res) => {
+  console.log(`[${new Date().toISOString()}] /api/v1/playlist - Query:`, req.query);
+  console.log(`[${new Date().toISOString()}] /api/v1/playlist - Raw query string:`, req.url);
+  
+  let url = req.query.url as string | undefined;
+
+  // Handle URL encoding issues - if URL contains & characters, they get split into separate query params
+  // Check if we have additional YouTube-specific params that should be part of the URL
+  const queryParams = req.query;
+  const youtubeParams = ['v', 'list', 'start_radio', 'index', 't'];
+  const additionalParams: string[] = [];
+  
+  // Collect any YouTube params that are separate query params (indicating URL was split)
+  for (const [key, value] of Object.entries(queryParams)) {
+    if (youtubeParams.includes(key) && key !== 'url') {
+      additionalParams.push(`${key}=${encodeURIComponent(value as string)}`);
+    }
+  }
+  
+  // If we have additional params and the URL doesn't already contain them, reconstruct
+  if (url && additionalParams.length > 0) {
+    // Check if URL already has these params
+    const urlObj = new URL(url);
+    const hasAllParams = additionalParams.every(param => {
+      const [key] = param.split('=');
+      return urlObj.searchParams.has(key);
+    });
+    
+    if (!hasAllParams) {
+      // Reconstruct URL with missing params
+      const separator = url.includes('?') ? '&' : '?';
+      url = url + separator + additionalParams.join('&');
+      console.log(`[INFO] Reconstructed URL with missing params: ${url}`);
+    }
+  } else if (!url && queryParams.url) {
+    // URL might be completely missing, try to reconstruct from all params
+    url = queryParams.url as string;
+    if (additionalParams.length > 0) {
+      const separator = url.includes('?') ? '&' : '?';
+      url = url + separator + additionalParams.join('&');
+      console.log(`[INFO] Reconstructed URL from query params: ${url}`);
+    }
+  }
+
+  if (!url || typeof url !== 'string') {
+    console.log(`[ERROR] Missing or invalid URL in query`);
+    return res.status(400).json({ error: 'Missing or invalid "url" query parameter' });
+  }
+
+  // Basic validation: must look like a YouTube URL
+  if (!url.startsWith('http')) {
+    console.log(`[ERROR] URL doesn't start with http: ${url}`);
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+
+  // Check if URL is a playlist
+  let urlObj: URL;
+  try {
+    urlObj = new URL(url);
+  } catch (error) {
+    console.log(`[ERROR] Failed to parse URL: ${url}`, error);
+    return res.status(400).json({ error: 'Invalid URL format' });
+  }
+  
+  const playlistId = urlObj.searchParams.get('list');
+  const isPlaylistUrl = url.includes('/playlist') || (playlistId !== null && playlistId !== '');
+  
+  console.log(`[DEBUG] URL: ${url}`);
+  console.log(`[DEBUG] Playlist ID from URL: ${playlistId}`);
+  console.log(`[DEBUG] Is playlist URL: ${isPlaylistUrl}`);
+  
+  if (!isPlaylistUrl) {
+    return res.status(400).json({ 
+      error: 'URL is not a playlist. Please provide a YouTube playlist URL.',
+      receivedUrl: url,
+      playlistId: playlistId
+    });
+  }
+
+  console.log(`[INFO] Extracting playlist details for: ${url}`);
+
+  try {
+    const videos = await extractPlaylistDetails(url);
+    
+    return res.json({
+      success: true,
+      playlistUrl: url,
+      totalVideos: videos.length,
+      videos: videos
+    });
+  } catch (error) {
+    console.error(`[ERROR] Failed to extract playlist: ${error}`);
+    return res.status(500).json({
+      error: 'Failed to extract playlist',
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// API v1 - Get playlist details (POST version - accepts URL in body)
+app.post('/api/v1/playlist', async (req, res) => {
+  console.log(`[${new Date().toISOString()}] /api/v1/playlist (POST) - Body:`, req.body);
+  
+  const { url } = req.body as { url?: string };
+
+  if (!url || typeof url !== 'string') {
+    console.log(`[ERROR] Missing or invalid URL in body`);
+    return res.status(400).json({ error: 'Missing or invalid "url" in body' });
+  }
+
+  // Basic validation: must look like a YouTube URL
+  if (!url.startsWith('http')) {
+    console.log(`[ERROR] URL doesn't start with http: ${url}`);
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+
+  // Check if URL is a playlist
+  let urlObj: URL;
+  try {
+    urlObj = new URL(url);
+  } catch (error) {
+    console.log(`[ERROR] Failed to parse URL: ${url}`, error);
+    return res.status(400).json({ error: 'Invalid URL format' });
+  }
+  
+  const playlistId = urlObj.searchParams.get('list');
+  const isPlaylistUrl = url.includes('/playlist') || (playlistId !== null && playlistId !== '');
+  
+  console.log(`[DEBUG] URL: ${url}`);
+  console.log(`[DEBUG] Playlist ID from URL: ${playlistId}`);
+  console.log(`[DEBUG] Is playlist URL: ${isPlaylistUrl}`);
+  
+  if (!isPlaylistUrl) {
+    return res.status(400).json({ 
+      error: 'URL is not a playlist. Please provide a YouTube playlist URL.',
+      receivedUrl: url,
+      playlistId: playlistId
+    });
+  }
+
+  console.log(`[INFO] Extracting playlist details for: ${url}`);
+
+  try {
+    const videos = await extractPlaylistDetails(url);
+    
+    // Format videos with better readability
+    const formattedVideos: FormattedPlaylistVideo[] = videos.map((video, index) => ({
+      index: index + 1,
+      id: video.id,
+      title: video.title,
+      url: video.url,
+      duration: formatDuration(video.duration),
+      durationSeconds: video.duration,
+      thumbnail: video.thumbnail,
+      uploader: video.uploader,
+      channel: video.channel
+    }));
+    
+    // Calculate totals
+    const totalDuration = videos.reduce((sum, video) => sum + (video.duration || 0), 0);
+    const totalDurationFormatted = formatDuration(totalDuration);
+    
+    // Estimate total sizes for audio and video
+    const estimatedAudioSize = estimateTotalSize(totalDuration, 'audio');
+    const estimatedVideoSize = estimateTotalSize(totalDuration, 'video');
+    
+    return res.json({
+      success: true,
+      playlist: {
+        url: url,
+        totalSongs: videos.length,
+        totalDuration: {
+          formatted: totalDurationFormatted,
+          seconds: totalDuration
+        },
+        estimatedSize: {
+          audio: {
+            formatted: formatFileSize(estimatedAudioSize),
+            bytes: estimatedAudioSize
+          },
+          video: {
+            formatted: formatFileSize(estimatedVideoSize),
+            bytes: estimatedVideoSize
+          }
+        }
+      },
+      songs: formattedVideos
+    });
+  } catch (error) {
+    console.error(`[ERROR] Failed to extract playlist: ${error}`);
+    return res.status(500).json({
+      error: 'Failed to extract playlist',
+      details: error instanceof Error ? error.message : String(error)
     });
   }
 });
@@ -715,6 +1454,13 @@ app.get('/', (req, res) => {
         <p><strong>Body:</strong> <code>{"url": "https://www.youtube.com/watch?v=...", "format": "audio"|"video", "quality": "192"}</code></p>
         <p><strong>Format:</strong> <code>"audio"</code> for MP3, <code>"video"</code> for MP4</p>
       </div>
+      
+      <div class="endpoint">
+        <span class="method">GET</span> <code>/api/v1/playlist</code>
+        <p>List all videos in a YouTube playlist</p>
+        <p><strong>Query:</strong> <code>?url=https://www.youtube.com/playlist?list=...</code></p>
+        <p>Returns list of videos with metadata (title, duration, thumbnail, etc.)</p>
+      </div>
     </body>
     </html>
   `);
@@ -755,15 +1501,15 @@ app.get('/debug/ffmpeg', (req, res) => {
   });
 });
 
-// Extract playlist video URLs using yt-dlp
-async function extractPlaylistVideos(playlistUrl: string): Promise<string[]> {
+// Extract playlist videos with metadata
+async function extractPlaylistDetails(playlistUrl: string): Promise<PlaylistVideo[]> {
   return new Promise((resolve, reject) => {
-    console.log(`[PLAYLIST] Extracting videos from playlist: ${playlistUrl}`);
+    console.log(`[PLAYLIST] Extracting playlist details: ${playlistUrl}`);
     
     const playlistArgs = [
       playlistUrl,
       '--flat-playlist',
-      '--print', '%(id)s|%(url)s',
+      '--print', '%(id)s|%(title)s|%(duration)s|%(thumbnail)s|%(uploader)s|%(channel)s|%(url)s',
       '--no-warnings',
       '--ignore-config'
     ];
@@ -805,32 +1551,39 @@ async function extractPlaylistVideos(playlistUrl: string): Promise<string[]> {
       }
 
       try {
-        // Parse output: each line is "videoId|videoUrl"
         const lines = stdoutData.trim().split('\n').filter(line => line.trim());
-        const videoUrls: string[] = [];
+        const videos: PlaylistVideo[] = [];
         
         for (const line of lines) {
           const parts = line.split('|');
-          if (parts.length >= 2) {
-            const videoUrl = parts[1].trim();
-            if (videoUrl && videoUrl.startsWith('http')) {
-              videoUrls.push(videoUrl);
-            } else {
-              // If URL is missing, construct it from video ID
-              const videoId = parts[0].trim();
-              if (videoId) {
-                videoUrls.push(`https://www.youtube.com/watch?v=${videoId}`);
-              }
-            }
-          } else if (parts.length === 1 && parts[0].trim()) {
-            // Only video ID provided
+          if (parts.length >= 1) {
             const videoId = parts[0].trim();
-            videoUrls.push(`https://www.youtube.com/watch?v=${videoId}`);
+            const title = (parts[1] || 'Unknown').trim();
+            const duration = parts[2] ? parseFloat(parts[2].trim()) : undefined;
+            const thumbnail = parts[3]?.trim() || undefined;
+            const uploader = parts[4]?.trim() || undefined;
+            const channel = parts[5]?.trim() || undefined;
+            let url = parts[6]?.trim();
+            
+            // Construct URL if not provided
+            if (!url || !url.startsWith('http')) {
+              url = `https://www.youtube.com/watch?v=${videoId}`;
+            }
+
+            videos.push({
+              id: videoId,
+              title: title || 'Unknown Title',
+              url,
+              duration,
+              thumbnail,
+              uploader,
+              channel
+            });
           }
         }
 
-        console.log(`[PLAYLIST] Extracted ${videoUrls.length} videos from playlist`);
-        resolve(videoUrls);
+        console.log(`[PLAYLIST] Extracted ${videos.length} videos with metadata`);
+        resolve(videos);
       } catch (error) {
         console.log(`[PLAYLIST] Failed to parse playlist output: ${error}`);
         reject(error);
@@ -847,6 +1600,7 @@ async function extractPlaylistVideos(playlistUrl: string): Promise<string[]> {
     }, 60000);
   });
 }
+
 
 // Send WebSocket message to client
 function sendWebSocketMessage(sessionId: string, message: ProgressMessage): void {
@@ -890,6 +1644,29 @@ wss.on('connection', (ws: WebSocket, req) => {
   ws.on('close', () => {
     console.log(`[WS] Client disconnected: ${sessionId}`);
     wsConnections.delete(sessionId);
+    
+    // If client disconnects during active download, check if we should cancel
+    // (This handles the case where user closes extension or cancels)
+    const data = sessionData.get(sessionId);
+    if (data && (data.processes.size > 0 || data.files.size > 0)) {
+      // Only auto-cancel if there are active processes or files
+      // This prevents cancelling completed downloads
+      console.log(`[WS] Client disconnected during active download, cancelling session ${sessionId}`);
+      cancelSession(sessionId);
+    }
+  });
+  
+  // Handle cancel messages from client
+  ws.on('message', (message: string) => {
+    try {
+      const data = JSON.parse(message.toString());
+      if (data.type === 'cancel') {
+        console.log(`[WS] Cancel request received for session ${sessionId}`);
+        cancelSession(sessionId);
+      }
+    } catch (error) {
+      // Ignore parse errors
+    }
   });
 
   ws.on('error', (error) => {
@@ -912,7 +1689,10 @@ server.listen(PORT, () => {
   console.log(`📥 Download endpoints:`);
   console.log(`   - Legacy (audio): POST http://localhost:${PORT}/api/download`);
   console.log(`   - v1 (audio/video): POST http://localhost:${PORT}/api/v1/download`);
+  console.log(`📋 Playlist endpoint: GET http://localhost:${PORT}/api/v1/playlist?url=...`);
   console.log(`🔌 WebSocket endpoint: ws://localhost:${PORT}/ws`);
+  console.log(`🧹 Auto-cleanup: Files older than 10 minutes are automatically deleted`);
+  console.log(`   (This prevents duplicate storage - files are served to Chrome, then cleaned up)`);
   console.log(`${'='.repeat(60)}\n`);
 });
 
