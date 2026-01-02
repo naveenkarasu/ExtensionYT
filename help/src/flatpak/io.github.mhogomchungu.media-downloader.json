@@ -1,0 +1,67 @@
+{
+  "app-id" : "io.github.mhogomchungu.media-downloader",
+  "runtime" : "org.kde.Platform",
+  "runtime-version" : "6.9",
+  "sdk" : "org.kde.Sdk",
+  "command" : "io.github.mhogomchungu.media-downloader",
+  "finish-args" : [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--filesystem=xdg-download",
+    "--share=network",
+    "--device=dri",
+    "--talk-name=org.kde.StatusNotifierWatcher"
+  ],
+  "modules" : [
+    {
+      "name" : "mutagen",
+      "buildsystem" : "simple",
+      "build-commands" : [
+        "pip3 install --prefix=/app . --no-build-isolation"
+      ],
+      "sources" : [
+        {
+          "type" : "git",
+          "url" : "https://github.com/quodlibet/mutagen.git",
+          "tag" : "release-1.47.0",
+          "commit" : "e38a475b4e00e248e04c50901d75b526464550d3",
+          "x-checker-data" : {
+            "type" : "git",
+            "tag-pattern" : "^release-([\\d.]+)$"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "quickjs",
+      "buildsystem" : "simple",
+      "build-commands" : [
+        "make",
+        "strip qjs",
+        "cp qjs /app/bin"
+      ],
+      "sources" : [
+        {
+          "type" : "archive",
+          "url" : "https://bellard.org/quickjs/quickjs-2025-09-13-2.tar.xz",
+          "sha256" : "996c6b5018fc955ad4d06426d0e9cb713685a00c825aa5c0418bd53f7df8b0b4"
+        }
+      ]
+    },
+    {
+      "name" : "io.github.mhogomchungu.media-downloader",
+      "buildsystem" : "cmake",
+      "config-opts" : [
+        "-DCMAKE_BUILD_TYPE=release",
+        "-DBUILD_FLATPAK=TRUE"
+      ],
+      "sources" : [
+        {
+          "type" : "dir",
+          "path" : "../.."
+        }
+      ]
+    }
+  ]
+}

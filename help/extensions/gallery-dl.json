@@ -1,0 +1,83 @@
+{
+    "AutoUpdate": true,
+    "BackendPath": "${default}",
+    "BatchFileArgument": "",
+    "CanDownloadPlaylist": false,
+    "Cmd": {
+        "Generic": {
+            "amd64": {
+                "Args": [
+                    "gallery-dl.bin"
+                ],
+                "Name": "gallery-dl.bin"
+            },
+            "x86": {
+                "Args": [
+                    "gallery-dl.bin"
+                ],
+                "Name": "gallery-dl.bin"
+            }
+        },
+        "MacOS": {
+            "amd64": {
+                "Args": [
+                    "gallery-dl_macos"
+                ],
+                "Name": "gallery-dl_macos"
+            },
+            "x86": {
+                "Args": [
+                    "gallery-dl_macos"
+                ],
+                "Name": "gallery-dl_macos"
+            }
+        },
+        "Windows": {
+            "amd64": {
+                "Args": [
+                    "gallery-dl.exe"
+                ],
+                "Name": "gallery-dl.exe"
+            },
+            "x86": {
+                "Args": [
+                    "gallery-dl_x86.exe"
+                ],
+                "Name": "gallery-dl_x86.exe"
+            }
+        }
+    },
+    "ControlJsonStructure": {
+        "Connector": "||",
+        "lhs": {
+            "startsWith": "[gallery-dl]"
+        },
+        "rhs": {
+            "contains": "% "
+        }
+    },
+    "CookieArgument": "--cookies-from-browser",
+    "CookieArgumentTextFile": "--cookies",
+    "DefaultDownLoadCmdOptions": [
+    ],
+    "DefaultListCmdOptions": [
+    ],
+    "DownloadUrl": "https://api.github.com/repos/mikf/gallery-dl/releases/latest",
+    "DownloadUrlMAC": "https://api.github.com/repos/gdl-org/builds/releases/latest",
+    "LikeYoutubeDl": false,
+    "Name": "gallery-dl",
+    "OptionsArgument": "",
+    "RemoveText": [
+    ],
+    "ReplaceOutputWithProgressReport": false,
+    "RequiredMinimumVersionOfMediaDownloader": "2.2.0",
+    "SkipLineWithText": [
+    ],
+    "SplitLinesBy": [
+        "\n"
+    ],
+    "Version": "1",
+    "VersionArgument": "--version",
+    "VersionStringLine": 0,
+    "VersionStringPosition": 0
+}

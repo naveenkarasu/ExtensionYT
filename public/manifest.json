@@ -1,0 +1,34 @@
+{
+    "manifest_version": 3,
+    "name": "Video Downloader",
+    "version": "1.0.0",
+    "description": "Download videos from YouTube, Dailymotion, Udemy, HiAnime, etc.",
+    "icons": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    },
+    "permissions": ["activeTab", "downloads", "storage"],
+    "host_permissions": [
+      "http://localhost:4000/*"
+    ],
+    "background": {
+      "service_worker": "src/scripts/background.ts"
+    },
+    "content_scripts": [
+      {
+        "matches": [
+          "*://*.youtube.com/*",
+          "*://*.dailymotion.com/*",
+          "*://*.udemy.com/*",
+          "*://*.hianime.to/*"
+        ],
+        "js": ["src/scripts/content.ts"]
+      }
+    ],
+    "action": {
+      "default_popup": "index.html",
+      "default_icon": "icon128.png"
+    }
+  }
+

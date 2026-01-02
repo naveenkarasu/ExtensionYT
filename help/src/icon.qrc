@@ -1,0 +1,27 @@
+
+ <!DOCTYPE RCC>
+ <RCC version="1.0">
+	 <qresource>
+		<file>media-downloader.png</file>
+		<file>icons/black/folder.png</file>
+		<file>icons/black/video.png</file>
+		<file>icons/black/executable.png</file>
+		<file>icons/black/clipboard.png</file>
+		<file>icons/black/recentlyUsed.png</file>
+		<file>icons/black/downloadOptions.png</file>
+		<file>icons/black/subscription.png</file>
+		<file>icons/black/cookie.png</file>
+		<file>icons/black/clearFile.png</file>
+		<file>icons/black/extensions.png</file>
+		<file>icons/white/folder.png</file>
+		<file>icons/white/video.png</file>
+		<file>icons/white/executable.png</file>
+		<file>icons/white/clipboard.png</file>
+		<file>icons/white/recentlyUsed.png</file>
+		<file>icons/white/downloadOptions.png</file>
+		<file>icons/white/subscription.png</file>
+		<file>icons/white/cookie.png</file>
+		<file>icons/white/clearFile.png</file>
+		<file>icons/white/extensions.png</file>
+		</qresource>
+ </RCC>

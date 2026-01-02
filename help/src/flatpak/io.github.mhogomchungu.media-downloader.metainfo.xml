@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+
+	<id>io.github.mhogomchungu.media-downloader</id>
+
+	<name>Media Downloader</name>
+
+	<summary>A GUI to yt-dlp, gallery-dl, lux.</summary>
+
+	<metadata_license>FSFAP</metadata_license>
+
+	<project_license>GPL-2.0-or-later</project_license>
+
+	<url type="homepage">https://mhogomchungu.github.io/media-downloader</url>
+	<url type="bugtracker">https://github.com/mhogomchungu/media-downloader/issues</url>
+
+	<content_rating type="oars-1.1" />
+
+	<developer id="io.github.mhogomchungu">
+		  <name>Francis Banyikwa</name>
+	</developer>
+
+	<description><p>This application make it possible to easily download video files, audio files and image files from all sorts of websites.</p></description>
+
+	<launchable type="desktop-id">io.github.mhogomchungu.media-downloader.desktop</launchable>
+
+	<screenshots>
+		<screenshot>
+			<image>https://raw.githubusercontent.com/mhogomchungu/media-downloader/8d9e2418b10655f8064b37a5770c064d96b898c1/images/media-downloader-1.png</image>
+		</screenshot>
+		<screenshot>
+			<image>https://raw.githubusercontent.com/mhogomchungu/media-downloader/8d9e2418b10655f8064b37a5770c064d96b898c1/images/media-downloader-2.png</image>
+		</screenshot>
+		<screenshot  type="default">
+			<image>https://raw.githubusercontent.com/mhogomchungu/media-downloader/8d9e2418b10655f8064b37a5770c064d96b898c1/images/media-downloader-3.png</image>
+		</screenshot>
+		<screenshot>
+			<image>https://raw.githubusercontent.com/mhogomchungu/media-downloader/8d9e2418b10655f8064b37a5770c064d96b898c1/images/media-downloader-4.png</image>
+		</screenshot>
+		<screenshot>
+			<image>https://raw.githubusercontent.com/mhogomchungu/media-downloader/8d9e2418b10655f8064b37a5770c064d96b898c1/images/media-downloader-5.png</image>
+		</screenshot>
+		<screenshot>
+			<image>https://raw.githubusercontent.com/mhogomchungu/media-downloader/8d9e2418b10655f8064b37a5770c064d96b898c1/images/media-downloader-6.png</image>
+		</screenshot>
+		<screenshot>
+			<image>https://raw.githubusercontent.com/mhogomchungu/media-downloader/8d9e2418b10655f8064b37a5770c064d96b898c1/images/media-downloader-7.png</image>
+		</screenshot>
+	</screenshots>
+
+	<categories>
+		<category>Network</category>
+		<category>Qt</category>
+	</categories>
+
+	<releases>
+		<release version="5.4.6" type="stable" date="2025-11-17" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.4.6/media-downloader-5.4.6.tar.xz</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Fix a bug that cause yt-dlp specific options to be set when using other engines</li>
+					<li>Update French translations</li>
+					<li>Update Greek translations</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.4.5" type="stable" date="2025-11-15" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.4.5/media-downloader-5.4.5.tar.xz</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Default to quickjs javascript runtime because deno crashes on flatpak</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.4.4" type="stable" date="2025-11-12" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.4.4/media-downloader-5.4.4.tar.xz</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Add support for autodownloading deno javascript runtime</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.4.3" type="stable" date="2025-10-01" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.4.3/media-downloader-5.4.3.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Add Ukranian translations</li>
+					<li>Various fixes and improvements</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.4.2" type="stable" date="2025-08-01" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.4.2/media-downloader-5.4.2.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Maintanance release</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.4.1" type="stable" date="2025-07-11" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.4.1/media-downloader-5.4.1.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>EXPERIMENTAL support for Gallery-dl working in Playlist tab</li>
+					<li>Add ability to show thumbnails in batch downloader tab when using gallery-dl.</li>
+					<li>Make it possible to specifically call VLC to stream media(needs org.freedesktop.Flatpak permission).</li>
+					<li>Add Bulgarian translations.</li>
+					<li>It is now possible to start downloading while the playlist tab is getting filled with entries.</li>
+					<li>It is now possible to do simultaneous downloading from all three tabs that can do downloading.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.4.0" type="stable" date="2025-05-29" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.4.0/media-downloader-5.4.0.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Fix a bug introduced in 5.3.3 that causes entries in batch downloader tab to start downloading when added because of using a wrong config only option.</li>
+					<li>Add an "Extension" sub tab in configure tab to expose more config only options in "General" sub tab.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.3.3" type="stable" date="2025-05-21" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.3.3/media-downloader-5.3.3.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Playlist downloader tab now says why populating playlist was stopped when using "--break-on-existing".</li>
+					<li>Fix a bug on batch downloader tab that may lead to a crash when fetching metadata.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.3.2" type="stable" date="2025-03-24" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.3.2/media-downloader-5.3.2.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>BUG fix: Download progress on the title bar shows again when downloading from batch downloader tab.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.3.1" type="stable" date="2025-03-11" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.3.1/media-downloader-5.3.1.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Fix a crash when using gallery-dl.</li>
+					<li>Add a menu in configure tab to install a short list of supported extensions.</li>
+					<li>Rearrage configure->general tab to make it friendly to translations.</li>
+					<li>Add a platform default theme and a light theme options.</li>
+					<li>Make it possible in the UI to choose between setting a browser name or setting a path to a cookie file.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.3.0" type="stable" date="2025-03-01" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.3.0/media-downloader-5.3.0.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Add a GUI way to set yt-dlp and gallery-dl option of "--cookies-from-browser".</li>
+					<li>Add Greek translations.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.2.2" type="stable" date="2025-02-08" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.2.2/media-downloader-5.2.2.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Many Urls can now be added in batch downloader's Url's text field without hanging the application.</li>
+					<li>Update Brazilian Portuguese translations.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.2.1" type="stable" date="2025-01-31" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.2.1/media-downloader-5.2.1.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Maintanance release.</li>
+					<li>Update KDE runtime from version 6.7 to version 6.8</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.2.0" type="stable" date="2024-11-04" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.2.0/media-downloader-5.2.0.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Use yt-dlp from "https://github.com/nicolaasjan/yt-dlp" when using windows7.</li>
+					<li>Add a context menu in the batch downloader tab to hide/show UI controls to make visible more entries to be downloaded.</li>
+					<li>When application starts, put it on the screen where it was when it was last closed.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.1.0" type="stable" date="2024-09-05" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.1.0/media-downloader-5.1.0.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Add ability to rename downloaded media in the batch downloader tab.</li>
+					<li>Add ability to rename entries in the library tab.</li>
+					<li>Add ability to play downloaded media in the basic downloader tab.</li>
+					<li>Add ability to edit preset options.</li>
+					<li>Ask for confirmation before deleting entries in the library tab.</li>
+					<li>Fix a bug that caused Qt based external tools to be affected by the app's scalling factor.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.0.1" type="stable" date="2024-08-20" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.0.1/media-downloader-5.0.1.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Use blue icons when a dark theme is in use.</li>
+					<li>Use ~/Downloads folder as default download folder when using flatpak.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="5.0.0" type="stable" date="2024-08-16" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/5.0.0/media-downloader-5.0.0.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>First release with flatpak support</li>
+					<li>Various bug fixes and improvements.</li>
+				</ul>
+			</description>
+		</release>
+		<release version="4.9.0" type="stable" date="2024-08-01" >
+			<url type="details">https://github.com/mhogomchungu/media-downloader/releases/download/4.9.0/media-downloader-4.9.0.1.tar.xz/</url>
+			<description>
+				<p>Changelog</p>
+				<ul>
+					<li>Fix a bug in basic downloader tab that shows up with latest version of yt-dlp.</li>
+					<li>Add improvements to Lux backend.</li>
+				</ul>
+			</description>
+		</release>
+	</releases>
+
+	<provides>
+		<binary>io.github.mhogomchungu.media-downloader</binary>
+	</provides>
+</component>
